@@ -1,57 +1,78 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use serde_json::Value;
 use std::{
     fs::File,
     io::{BufReader, BufWriter, Write},
 };
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
 struct Cli {
-    #[command(subcommand)]
+    /// Command
+    #[arg(value_enum)]
     command: Commands,
+
+    /// Hide data elements
+    #[arg(short, long)]
+    elements_hide: bool,
+
+    /// Hide cardinality
+    #[arg(short, long)]
+    cardinality_hide: bool,
+
+    /// Files to process
+    files: Vec<String>,
 }
 
-#[derive(Subcommand)]
+#[derive(clap::ValueEnum, Clone, Debug)]
 enum Commands {
-    PlantUml {
-        /// Files to process
-        files: Vec<String>,
-    },
+    PlantUml,
+    // Mindmap {},
+    // Table {}
+}
+
+struct ElementInfo {
+    id: String,
+    datatype: String,
+    min: String,
+    max:String,
 }
 
 struct DocInfo {
     id: String,
     value: Value,
+//    elements: Vec<ElementInfo>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    println!("{:?}", cli);
+
+    let mut docs = Vec::<DocInfo>::new();
+
+    for file in cli.files.iter() {
+        if let Ok(value) = load_json_from_file(file) {
+            if let Some(id) = value["id"].as_str() {
+                let doc = DocInfo {
+                    id: id.to_string(),
+                    value: value.to_owned(),
+                };
+                docs.push(doc);
+            }
+        }
+    }
+
     match cli.command {
-        Commands::PlantUml {
-            files
-        } => {
-            let output = File::create("output.txt")?;
+        Commands::PlantUml {} => {
+            let output = File::create("output.plantuml")?;
             let mut writer = BufWriter::new(output); // Create a buffered writer
 
             writeln!(
                 writer,
                 "@startuml\nskinparam linetype polyline\nhide circle\nhide stereotype\nhide methods\n"
             )?;
-
-            let mut docs = Vec::<DocInfo>::new();
-
-            for file in files.iter() {
-                if let Ok(value) = load_json_from_file(file) {
-                    if let Some(id) = value["id"].as_str() {
-                        let doc = DocInfo {
-                            id: id.to_string(),
-                            value: value.to_owned(),
-                        };
-                        docs.push(doc);
-                    }
-                }
-            }
 
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
@@ -99,13 +120,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // if the datatype is one of the classes drawn, add a relation instead of a class element
                             if let Some(_) = docs.iter().position(|s| s.id == datatype) {
-                                relations.push((element_part.to_string(), datatype.to_string(), min.to_string(), max.to_string()));
+                                relations.push((
+                                    element_part.to_string(),
+                                    datatype.to_string(),
+                                    min.to_string(),
+                                    max.to_string(),
+                                ));
                             } else {
-                                writeln!(
-                                    writer,
-                                    "{:>hier_level$}|_ {} : {} [{}..{}]",
-                                    "", element_part, datatype, min, max
-                                )?;
+                                if !cli.elements_hide {
+                                    write!(
+                                        writer,
+                                        "{:>hier_level$}|_ {} : {}",
+                                        "", element_part, datatype
+                                    )?;
+                                    if !cli.cardinality_hide {
+                                        write!(writer, " [{}..{}]", min, max)?;
+                                    }
+                                    writeln!(writer)?;
+                                }
                             }
                         }
                     }
