@@ -17,22 +17,17 @@ struct Cli {
 
 #[derive(Args, Debug)]
 struct CommonArgs {
-    /// Hide data elements
-    #[arg(short, long)]
-    elements_hide: bool,
-
-    /// Hide cardinality
-    #[arg(short, long)]
-    cardinality_hide: bool,
-
     /// Files to process
     files: Vec<String>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Generate plantUml class diagrams in a single file based on the structure definitions
     PlantUml(PlantUmlArgs),
+    /// Generate a plantUml mind map in a separate file for each structure definition
     Mindmap(MindmapArgs),
+    /// Generate a markdown table in a separate file for each structure definition
     Table(TableArgs),
 }
 
@@ -41,6 +36,15 @@ struct PlantUmlArgs {
     #[command(flatten)]
     common: CommonArgs,
 
+    /// Hide data elements
+    #[arg(short, long)]
+    elements_hide: bool,
+
+    /// Hide cardinality
+    #[arg(short, long)]
+    cardinality_hide: bool,
+    
+    /// Output tile name
     #[arg(short, long, default_value = "output.plantuml")]
     output_file: PathBuf,
 }
@@ -50,6 +54,7 @@ struct MindmapArgs {
     #[command(flatten)]
     common: CommonArgs,
 
+    /// At which hierarchical level to stop using boxes in mind map
     #[arg(short, long, default_value_t = 255)]
     box_level: usize,
 }
@@ -71,7 +76,6 @@ struct ElementInfo {
 #[derive(Debug)]
 struct DocInfo {
     id: String,
-    // value: Value,
     elements: Vec<ElementInfo>,
 }
 
@@ -117,13 +121,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             element.max.clone(),
                                         ));
                                     } else {
-                                        if !args.common.elements_hide {
+                                        if !args.elements_hide {
                                             write!(
                                                 writer,
                                                 "{:>hier_level$}|_ {} : {}",
                                                 "", element_part, datatype
                                             )?;
-                                            if !args.common.cardinality_hide {
+                                            if !args.cardinality_hide {
                                                 write!(writer, " [{}..{}]", element.min, element.max)?;
                                             }
                                             writeln!(writer)?;
