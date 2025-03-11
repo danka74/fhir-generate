@@ -33,7 +33,7 @@ struct CommonArgs {
 enum Commands {
     PlantUml(PlantUmlArgs),
     Mindmap(MindmapArgs),
-    // Table {}
+    Table(TableArgs),
 }
 
 #[derive(Args, Debug)]
@@ -52,6 +52,12 @@ struct MindmapArgs {
 
     #[arg(short, long, default_value_t = 255)]
     box_level: usize,
+}
+
+#[derive(Args, Debug)]
+struct TableArgs {
+    #[command(flatten)]
+    common: CommonArgs,
 }
 
 #[derive(Debug)]
@@ -74,96 +80,115 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::PlantUml(args) => {
-            let docs = load_structure_definition_files(&args.common.files)?;
-            let output = File::create(args.output_file)?;
-            let mut writer = BufWriter::new(output); // Create a buffered writer
-
-            writeln!(
-                writer,
-                "@startuml\nskinparam linetype polyline\nhide circle\nhide stereotype\nhide methods\n"
-            )?;
-
-            for doc in docs.iter() {
-                println!("processing: {}", doc.id);
-                writeln!(writer, "class **{}** {{", doc.id)?;
-                let mut relations = Vec::<(String, String, String, String)>::new();
-
-                for element in doc.elements.iter() {
-                    if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
-                        let hier_level = count_char_occurrences(&element.id, '.') * 2;
-                        // extract datatype doc.
-                        let mut datatype = element.datatype.clone();
-                        if datatype.starts_with("http") {
-                            match get_slice_after_last_occurrence(&datatype, '/') {
-                                Some(dt) => {
-                                    datatype = dt;
+                        let docs = load_structure_definition_files(&args.common.files)?;
+                        let output = File::create(args.output_file)?;
+                        let mut writer = BufWriter::new(output); // Create a buffered writer
+        
+                        writeln!(
+                            writer,
+                            "@startuml\nskinparam linetype polyline\nhide circle\nhide stereotype\nhide methods\n"
+                        )?;
+        
+                        for doc in docs.iter() {
+                            println!("processing: {}", doc.id);
+                            writeln!(writer, "class **{}** {{", doc.id)?;
+                            let mut relations = Vec::<(String, String, String, String)>::new();
+        
+                            for element in doc.elements.iter() {
+                                if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
+                                    let hier_level = count_char_occurrences(&element.id, '.') * 2;
+                                    // extract datatype doc.
+                                    let mut datatype = element.datatype.clone();
+                                    if datatype.starts_with("http") {
+                                        match get_slice_after_last_occurrence(&datatype, '/') {
+                                            Some(dt) => {
+                                                datatype = dt;
+                                            }
+                                            None => {}
+                                        };
+                                    }
+        
+                                    // if the datatype is one of the classes drawn, add a relation instead of a class element
+                                    if let Some(_) = docs.iter().position(|s| s.id == datatype) {
+                                        relations.push((
+                                            element_part,
+                                            datatype,
+                                            element.min.clone(),
+                                            element.max.clone(),
+                                        ));
+                                    } else {
+                                        if !args.common.elements_hide {
+                                            write!(
+                                                writer,
+                                                "{:>hier_level$}|_ {} : {}",
+                                                "", element_part, datatype
+                                            )?;
+                                            if !args.common.cardinality_hide {
+                                                write!(writer, " [{}..{}]", element.min, element.max)?;
+                                            }
+                                            writeln!(writer)?;
+                                        }
+                                    }
                                 }
-                                None => {}
-                            };
-                        }
-
-                        // if the datatype is one of the classes drawn, add a relation instead of a class element
-                        if let Some(_) = docs.iter().position(|s| s.id == datatype) {
-                            relations.push((
-                                element_part,
-                                datatype,
-                                element.min.clone(),
-                                element.max.clone(),
-                            ));
-                        } else {
-                            if !args.common.elements_hide {
-                                write!(
-                                    writer,
-                                    "{:>hier_level$}|_ {} : {}",
-                                    "", element_part, datatype
-                                )?;
-                                if !args.common.cardinality_hide {
-                                    write!(writer, " [{}..{}]", element.min, element.max)?;
-                                }
-                                writeln!(writer)?;
                             }
+        
+                            writeln!(writer, "}}")?;
+        
+                            for rel in relations {
+                                writeln!(
+                                    writer,
+                                    "\"**{}**\" -- \"{}..{}\" \"**{}**\" : {} >",
+                                    doc.id, rel.2, rel.3, rel.1, rel.0
+                                )?;
+                            }
+        
+                            writeln!(writer)?;
+                        }
+        
+                        writeln!(writer, "@enduml")?;
+            }
+        Commands::Mindmap(args) => {
+                let docs = load_structure_definition_files(&args.common.files)?;
+                for doc in docs.iter() {
+                    println!("processing: {}", doc.id);
+                    let output = File::create(format!("{}.plantuml", doc.id))?;
+                    let mut writer = BufWriter::new(output); // Create a buffered writer
+
+                    writeln!(writer, "@startmindmap")?;
+
+                    writeln!(writer, "* {}", doc.id)?;
+
+                    for element in doc.elements.iter() {
+                        if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
+                            let hier_level = count_char_occurrences(&element.id, '.') + 1;
+                            writeln!(writer, 
+                                "{}{} {}", 
+                                "*".repeat(hier_level), 
+                                if hier_level > args.box_level { "_" } else { "" },
+                                element_part)?;
                         }
                     }
+
+                    writeln!(writer, "@endmindmap")?;
                 }
-
-                writeln!(writer, "}}")?;
-
-                for rel in relations {
-                    writeln!(
-                        writer,
-                        "\"**{}**\" -- \"{}..{}\" \"**{}**\" : {} >",
-                        doc.id, rel.2, rel.3, rel.1, rel.0
-                    )?;
-                }
-
-                writeln!(writer)?;
             }
-
-            writeln!(writer, "@enduml")?;
-        }
-        Commands::Mindmap(args) => {
+        Commands::Table(args) => {
             let docs = load_structure_definition_files(&args.common.files)?;
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
-                let output = File::create(format!("{}.plantuml", doc.id))?;
+                let output = File::create(format!("{}.md", doc.id))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
 
-                writeln!(writer, "@startmindmap")?;
+                writeln!(writer, "# {}", doc.id)?;
 
-                writeln!(writer, "* {}", doc.id)?;
+                writeln!(writer, "| Element | Datatype | Min | Max |")?;
+                writeln!(writer, "| --- | --- | --- | --- |")?;
 
                 for element in doc.elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
-                        let hier_level = count_char_occurrences(&element.id, '.') + 1;
-                        writeln!(writer, 
-                            "{}{} {}", 
-                            "*".repeat(hier_level), 
-                            if hier_level > args.box_level { "_" } else { "" },
-                            element_part)?;
+                        writeln!(writer, "| {} | {} | {} | {} |", camel_to_spaced_pascal(&element_part.replace("[x]", "")), element.datatype, element.min, element.max)?;
                     }
                 }
-
-                writeln!(writer, "@endmindmap")?;
             }
         }
     }
@@ -243,4 +268,27 @@ fn load_single_structure_definition_file(
         id: id.to_string(),
         elements,
     })
+}
+
+fn camel_to_spaced_pascal(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c.is_uppercase() && !result.is_empty() {
+            result.push(' ');
+        }
+        result.push(c);
+    }
+
+    result.split_whitespace()
+        .map(|word| {
+            let mut c = word.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
