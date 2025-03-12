@@ -164,12 +164,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     for element in doc.elements.iter() {
                         if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
-                            let hier_level = count_char_occurrences(&element.id, '.') + 1;
+                            let hier_level: usize = count_char_occurrences(&element.id, '.') + 1;
                             writeln!(writer, 
                                 "{}{} {}", 
                                 "*".repeat(hier_level), 
                                 if hier_level > args.box_level { "_" } else { "" },
-                                element_part)?;
+                                camel_to_spaced_pascal(&element_part.replace("[x]", "")))?;
                         }
                     }
 
@@ -185,12 +185,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 writeln!(writer, "# {}", doc.id)?;
 
-                writeln!(writer, "| Element | Datatype | Min | Max |")?;
-                writeln!(writer, "| --- | --- | --- | --- |")?;
+                writeln!(writer, "| Code | Element | Datatype | Cardinality |")?;
+                writeln!(writer, "| --- | --- | --- | --- | --- |")?;
 
+                let mut levels = Vec::<usize>::new();
+                levels.push(0);
+                let mut current_level: usize = 0;
+    
                 for element in doc.elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
-                        writeln!(writer, "| {} | {} | {} | {} |", camel_to_spaced_pascal(&element_part.replace("[x]", "")), element.datatype, element.min, element.max)?;
+                        let hier_level: usize = count_char_occurrences(&element.id, '.');
+                        if hier_level > current_level {
+                            levels.push(1);
+                            current_level += 1;
+                        } else if hier_level < current_level {
+                            levels.pop();
+                            current_level -= 1;
+                        } else {
+                            levels[current_level] += 1;
+                        }
+                        let mut code: String = "".to_owned();
+                        if let Some(c) = "ABCDEFGH".chars().nth(levels[0]) {
+                            code.push(c);
+                            for lv in 1..(current_level+1) {
+                                code.push('.');
+                                code.push_str(&levels[lv].to_string());
+                            }
+                            
+                        }
+                        writeln!(writer, "| {} | {} | {} | {} |", code, camel_to_spaced_pascal(&element_part.replace("[x]", "")), element.datatype, format!("{}..{}", element.min, element.max))?;
                     }
                 }
             }
