@@ -63,7 +63,12 @@ struct MindmapArgs {
 struct TableArgs {
     #[command(flatten)]
     common: CommonArgs,
+
+    /// Letter used for code generation
+    #[arg(short, long, default_value_t = 'A')]
+    code_letter: char,
 }
+
 
 #[derive(Debug)]
 struct ElementInfo {
@@ -208,13 +213,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             levels[current_level] += 1;
                         }
-                        let mut code: String = "".to_owned();
-                        if let Some(c) = "ABCDEFGH".chars().nth(levels[0]) {
-                            code.push(c);
-                            for lv in 1..(current_level + 1) {
-                                code.push('.');
-                                code.push_str(&levels[lv].to_string());
-                            }
+                        let mut code = args.code_letter.to_string();
+                        for lv in 1..(current_level + 1) {
+                            code.push('.');
+                            code.push_str(&levels[lv].to_string());
                         }
                         write!(
                             writer,
