@@ -64,16 +64,15 @@ struct TableArgs {
     #[command(flatten)]
     common: CommonArgs,
 
-    /// Letter used for code generation
-    #[arg(short, long, default_value_t = 'A')]
-    code_letter: char,
+    /// Prefix used for code generation
+    #[arg(short, long, default_value = "A")]
+    prefix_code: String,
 }
-
 
 #[derive(Debug)]
 struct ElementInfo {
     id: String,
-    datatype: String,
+    datatype: Vec<String>,
     min: String,
     max: String,
     binding: Option<String>,
@@ -108,37 +107,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for element in doc.elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
                         let hier_level = count_char_occurrences(&element.id, '.') * 2;
-                        // extract datatype doc.
-                        let mut datatype = element.datatype.clone();
-                        if datatype.starts_with("http") {
-                            match get_slice_after_last_occurrence(&datatype, '/') {
-                                Some(dt) => {
-                                    datatype = dt;
-                                }
-                                None => {}
-                            };
-                        }
 
                         // if the datatype is one of the classes drawn, add a relation instead of a class element
-                        if let Some(_) = docs.iter().position(|s| s.id == datatype) {
-                            relations.push((
-                                element_part,
-                                datatype,
-                                element.min.clone(),
-                                element.max.clone(),
-                            ));
-                        } else {
-                            if !args.elements_hide {
-                                write!(
-                                    writer,
-                                    "{:>hier_level$}|_ {} : {}",
-                                    "", element_part, datatype
-                                )?;
-                                if !args.cardinality_hide {
-                                    write!(writer, " [{}..{}]", element.min, element.max)?;
-                                }
-                                writeln!(writer)?;
+                        // TODO: element is removed from element list if there is one datatype that is among the structure definitions
+                        let mut show_element = true;
+                        for datatype in element.datatype.iter() {
+                            if let Some(_) = docs.iter().position(|d| datatype == &d.id) {
+                                relations.push((
+                                    element_part.clone(),
+                                    datatype.clone(),
+                                    element.min.clone(),
+                                    element.max.clone(),
+                                ));
+                                show_element = false;
                             }
+                        }
+
+                        if show_element && !args.elements_hide {
+                            write!(
+                                writer,
+                                "{:>hier_level$}|_ {} : {}",
+                                "",
+                                element_part,
+                                reduce_datatypes(&element.datatype)
+                            )?;
+                            if !args.cardinality_hide {
+                                write!(writer, " [{}..{}]", element.min, element.max)?;
+                            }
+                            writeln!(writer)?;
                         }
                     }
                 }
@@ -149,7 +145,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     writeln!(
                         writer,
                         "\"**{}**\" -- \"{}..{}\" \"**{}**\" : {} >",
-                        doc.id, rel.2, rel.3, rel.1, rel.0
+                        doc.id,
+                        rel.2,
+                        rel.3,
+                        rel.1,
+                        rel.0.replace("[x]", "")
                     )?;
                 }
 
@@ -194,7 +194,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 writeln!(writer, "# {}", doc.id)?;
 
-                writeln!(writer, "| Code | Element | Datatype | Cardinality | Preferred Code System | Binding Strength |")?;
+                writeln!(
+                    writer,
+                    "| Code | Element | Datatype | Cardinality | Preferred Code System | Binding Strength |"
+                )?;
                 writeln!(writer, "| --- | --- | --- | --- | --- | --- |")?;
 
                 let mut levels = Vec::<usize>::new();
@@ -213,17 +216,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             levels[current_level] += 1;
                         }
-                        let mut code = args.code_letter.to_string();
+                        let mut code = args.prefix_code.clone();
                         for lv in 1..(current_level + 1) {
                             code.push('.');
                             code.push_str(&levels[lv].to_string());
                         }
+
                         write!(
                             writer,
                             "| {} | {} | {} | {} |",
                             code,
                             camel_to_spaced_pascal(&element_part.replace("[x]", "")),
-                            element.datatype,
+                            reduce_datatypes(&element.datatype),
                             format!("{}..{}", element.min, element.max)
                         )?;
                         if let Some(binding) = &element.binding {
@@ -294,9 +298,23 @@ fn load_single_structure_definition_file(
     for element in snapshot.iter() {
         let element_id = element["id"].as_str().ok_or("Missing element id")?;
         if element_id != id {
-            let datatype = element["type"][0]["code"]
-                .as_str()
-                .ok_or("Missing datatype")?;
+            let mut datatype = Vec::<String>::new();
+            for dt in element["type"].as_array().ok_or("Missing datatype")? {
+                if let Some(code) = dt["code"].as_str() {
+                    let code = code.to_string();
+                    if code.starts_with("http") {
+                        match get_slice_after_last_occurrence(&code, '/') {
+                            Some(end) => {
+                                datatype.push(end);
+                            }
+                            None => {}
+                        };
+                    } else {
+                        datatype.push(code);
+                    }
+                }
+            }
+
             let min = if element["min"].is_string() {
                 element["min"]
                     .as_str()
@@ -314,7 +332,7 @@ fn load_single_structure_definition_file(
                 .map(|s| s.to_string());
             elements.push(ElementInfo {
                 id: element_id.to_string(),
-                datatype: datatype.to_string(),
+                datatype,
                 min,
                 max: max.to_string(),
                 binding,
@@ -350,4 +368,17 @@ fn camel_to_spaced_pascal(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn reduce_datatypes(datatypes: &Vec<String>) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for d in datatypes.iter() {
+        if !first {
+            result.push_str(", ");
+            first = false;
+        };
+        result.push_str(d);
+    }
+    result
 }
