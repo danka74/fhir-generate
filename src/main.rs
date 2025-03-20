@@ -72,6 +72,8 @@ struct TableArgs {
 #[derive(Debug)]
 struct ElementInfo {
     id: String,
+    short: String,
+    definition: String,
     datatype: Vec<String>,
     min: String,
     max: String,
@@ -196,52 +198,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 writeln!(
                     writer,
-                    "| Code | Element | Datatype | Cardinality | Preferred Code System | Binding Strength |"
+                    "| Code | Element | Short | Definition | Datatype | Cardinality | Preferred Code System | Binding Strength |"
                 )?;
-                writeln!(writer, "| --- | --- | --- | --- | --- | --- |")?;
+                writeln!(writer, "| --- | --- | --- | --- | --- | --- | --- | --- |")?;
 
                 let mut levels = Vec::<usize>::new();
                 levels.push(0);
                 let mut current_level: usize = 0;
 
                 for element in doc.elements.iter() {
-                    if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
-                        let hier_level: usize = count_char_occurrences(&element.id, '.');
-                        if hier_level > current_level {
-                            levels.push(1);
-                            current_level += 1;
-                        } else if hier_level < current_level {
-                            levels.pop();
-                            current_level -= 1;
-                        } else {
-                            levels[current_level] += 1;
-                        }
-                        let mut code = args.prefix_code.clone();
-                        for lv in 1..(current_level + 1) {
-                            code.push('.');
-                            code.push_str(&levels[lv].to_string());
-                        }
-
-                        write!(
-                            writer,
-                            "| {} | {} | {} | {} |",
-                            code,
-                            camel_to_spaced_pascal(&element_part.replace("[x]", "")),
-                            reduce_datatypes(&element.datatype),
-                            format!("{}..{}", element.min, element.max)
-                        )?;
-                        if let Some(binding) = &element.binding {
-                            write!(writer, " {} |", binding)?;
-                        } else {
-                            write!(writer, " |")?;
-                        }
-                        if let Some(binding_strength) = &element.binding_strength {
-                            write!(writer, " {} |", binding_strength)?;
-                        } else {
-                            write!(writer, " |")?;
-                        }
-                        writeln!(writer)?;
+                    let hier_level: usize = count_char_occurrences(&element.id, '.');
+                    let element_part: String = if hier_level > 0 {
+                        get_slice_after_last_occurrence(&element.id, '.')
+                            .ok_or("Wrong element part")?
+                    } else {
+                        element.id.clone()
+                    };
+                    if hier_level > current_level {
+                        levels.push(1);
+                        current_level += 1;
+                    } else if hier_level < current_level {
+                        levels.pop();
+                        current_level -= 1;
+                    } else {
+                        levels[current_level] += 1;
                     }
+                    let mut code = args.prefix_code.clone();
+                    for lv in 1..(current_level + 1) {
+                        code.push('.');
+                        code.push_str(&levels[lv].to_string());
+                    }
+
+                    write!(
+                        writer,
+                        "| {} | {} | {} | {} | {} | {} |",
+                        code,
+                        camel_to_spaced_pascal(&element_part.replace("[x]", "")),
+                        element.short,
+                        element.definition,
+                        reduce_datatypes(&element.datatype),
+                        format!("{}..{}", element.min, element.max)
+                    )?;
+                    if let Some(binding) = &element.binding {
+                        write!(writer, " {} |", binding)?;
+                    } else {
+                        write!(writer, " |")?;
+                    }
+                    if let Some(binding_strength) = &element.binding_strength {
+                        write!(writer, " {} |", binding_strength)?;
+                    } else {
+                        write!(writer, " |")?;
+                    }
+                    writeln!(writer)?;
                 }
             }
         }
@@ -297,9 +305,18 @@ fn load_single_structure_definition_file(
     let mut elements = Vec::<ElementInfo>::new();
     for element in snapshot.iter() {
         let element_id = element["id"].as_str().ok_or("Missing element id")?;
-        if element_id != id {
-            let mut datatype = Vec::<String>::new();
-            for dt in element["type"].as_array().ok_or("Missing datatype")? {
+        println!("{:?}", element_id);
+        let short = element["short"]
+            .as_str()
+            .ok_or("Missing short description")?
+            .to_string();
+        let definition = element["definition"]
+            .as_str()
+            .ok_or("Missing definition")?
+            .to_string();
+        let mut datatype = Vec::<String>::new();
+        if let Some(type_array) = element["type"].as_array() {
+            for dt in type_array {
                 if let Some(code) = dt["code"].as_str() {
                     let code = code.to_string();
                     if code.starts_with("http") {
@@ -314,31 +331,33 @@ fn load_single_structure_definition_file(
                     }
                 }
             }
-
-            let min = if element["min"].is_string() {
-                element["min"]
-                    .as_str()
-                    .ok_or(format!("Missing min cardinality: {:?}", element["min"]))?
-                    .to_string()
-            } else {
-                element["min"].to_string()
-            };
-            let max = element["max"].as_str().ok_or("Missing max cardinality")?;
-            let binding = element["binding"]["description"]
-                .as_str()
-                .map(|s| s.to_string());
-            let binding_strength = element["binding"]["strength"]
-                .as_str()
-                .map(|s| s.to_string());
-            elements.push(ElementInfo {
-                id: element_id.to_string(),
-                datatype,
-                min,
-                max: max.to_string(),
-                binding,
-                binding_strength,
-            });
         }
+
+        let min = if element["min"].is_string() {
+            element["min"]
+                .as_str()
+                .ok_or(format!("Missing min cardinality: {:?}", element["min"]))?
+                .to_string()
+        } else {
+            element["min"].to_string()
+        };
+        let max = element["max"].as_str().ok_or("Missing max cardinality")?;
+        let binding = element["binding"]["description"]
+            .as_str()
+            .map(|s| s.to_string());
+        let binding_strength = element["binding"]["strength"]
+            .as_str()
+            .map(|s| s.to_string());
+        elements.push(ElementInfo {
+            id: element_id.to_string(),
+            short,
+            definition,
+            datatype,
+            min,
+            max: max.to_string(),
+            binding,
+            binding_strength,
+        });
     }
     Ok(DocInfo {
         id: id.to_string(),
@@ -376,9 +395,9 @@ fn reduce_datatypes(datatypes: &Vec<String>) -> String {
     for d in datatypes.iter() {
         if !first {
             result.push_str(", ");
-            first = false;
         };
         result.push_str(d);
+        first = false;
     }
     result
 }
