@@ -2,3 +2,4 @@
 *.plantuml
 *.md
 *.docx
+!README.md
