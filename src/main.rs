@@ -1,10 +1,13 @@
+mod utils;
+
 use clap::{Args, Parser, Subcommand};
-use serde_json::Value;
+use utils::{camel_to_spaced_pascal, reduce_datatypes};
 use std::{
     fs::File,
-    io::{BufReader, BufWriter, Write},
+    io::{BufWriter, Write},
     path::PathBuf,
 };
+use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -106,6 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(writer, "class **{}** {{", doc.id)?;
                 let mut relations = Vec::<(String, String, String, String)>::new();
 
+                // TODO: Assumes elements appear in the right order. Could sort on ElementDefinition.id but that would change the stated order.
                 for element in doc.elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
                         let hier_level = count_char_occurrences(&element.id, '.') * 2;
@@ -114,6 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // TODO: element is removed from element list if there is one datatype that is among the structure definitions
                         let mut show_element = true;
                         for datatype in element.datatype.iter() {
+                            // TODO: or use a hashmap for faster lookup
+                            // TODO: look also for Reference(X or T)
                             if let Some(_) = docs.iter().position(|d| datatype == &d.id) {
                                 relations.push((
                                     element_part.clone(),
@@ -258,24 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_json_from_file(path: &String) -> Result<Value, Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let value = serde_json::from_reader(reader)?;
-    Ok(value)
-}
 
-fn get_slice_after_last_occurrence(s: &String, c: char) -> Option<String> {
-    if let Some(last_index) = s.rfind(c) {
-        Some(s[last_index + c.len_utf8()..].to_string())
-    } else {
-        None
-    }
-}
-
-fn count_char_occurrences(s: &String, c: char) -> usize {
-    s.chars().filter(|&ch| ch == c).count()
-}
 
 fn load_structure_definition_files(
     files: &Vec<String>,
@@ -305,7 +294,6 @@ fn load_single_structure_definition_file(
     let mut elements = Vec::<ElementInfo>::new();
     for element in snapshot.iter() {
         let element_id = element["id"].as_str().ok_or("Missing element id")?;
-        println!("{:?}", element_id);
         let short = element["short"]
             .as_str()
             .ok_or("Missing short description")?
@@ -363,41 +351,4 @@ fn load_single_structure_definition_file(
         id: id.to_string(),
         elements,
     })
-}
-
-fn camel_to_spaced_pascal(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c.is_uppercase() && !result.is_empty() {
-            result.push(' ');
-        }
-        result.push(c);
-    }
-
-    result
-        .split_whitespace()
-        .map(|word| {
-            let mut c = word.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn reduce_datatypes(datatypes: &Vec<String>) -> String {
-    let mut result = String::new();
-    let mut first = true;
-    for d in datatypes.iter() {
-        if !first {
-            result.push_str(", ");
-        };
-        result.push_str(d);
-        first = false;
-    }
-    result
 }
