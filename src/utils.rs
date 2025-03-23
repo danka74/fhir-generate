@@ -1,6 +1,6 @@
+use serde_json::Value;
 use std::fs::File;
 use std::io::BufReader;
-use serde_json::Value;
 
 pub fn load_json_from_file(path: &String) -> Result<Value, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
@@ -10,11 +10,8 @@ pub fn load_json_from_file(path: &String) -> Result<Value, Box<dyn std::error::E
 }
 
 pub fn get_slice_after_last_occurrence(s: &String, c: char) -> Option<String> {
-    if let Some(last_index) = s.rfind(c) {
-        Some(s[last_index + c.len_utf8()..].to_string())
-    } else {
-        None
-    }
+    s.rfind(c)
+        .map(|last_index| s[last_index + c.len_utf8()..].to_string())
 }
 
 pub fn count_char_occurrences(s: &String, c: char) -> usize {
@@ -26,7 +23,8 @@ pub fn camel_to_spaced_pascal(s: &str) -> String {
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
-        if c.is_uppercase() && !result.is_empty() {
+        let next = chars.peek();
+        if c.is_uppercase() && !result.is_empty() && next.is_some_and(|x| x.is_lowercase()) {
             result.push(' ');
         }
         result.push(c);
@@ -45,7 +43,7 @@ pub fn camel_to_spaced_pascal(s: &str) -> String {
         .join(" ")
 }
 
-pub fn reduce_datatypes(datatypes: &Vec<String>) -> String {
+pub fn reduce_datatypes(datatypes: &[String]) -> String {
     let mut result = String::new();
     let mut first = true;
     for d in datatypes.iter() {
