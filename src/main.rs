@@ -1,13 +1,13 @@
 mod utils;
 
+use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
 use clap::{Args, Parser, Subcommand};
-use utils::{camel_to_spaced_pascal, reduce_datatypes};
 use std::{
     fs::File,
     io::{BufWriter, Write},
     path::PathBuf,
 };
-use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
+use utils::{camel_to_spaced_pascal, reduce_datatypes};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -220,30 +220,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         element.id.clone()
                     };
-                    if hier_level > current_level {
-                        levels.push(1);
-                        current_level += 1;
-                    } else if hier_level < current_level {
-                        levels.pop();
-                        current_level -= 1;
-                    } else {
-                        levels[current_level] += 1;
+                    match hier_level.cmp(&current_level) {
+                        std::cmp::Ordering::Greater => {
+                            levels.push(1);
+                            current_level += 1;
+                        }
+                        std::cmp::Ordering::Less => {
+                            levels.pop();
+                            current_level -= 1;
+                        }
+                        std::cmp::Ordering::Equal => {
+                            levels[current_level] += 1;
+                        }
                     }
                     let mut code = args.prefix_code.clone();
-                    for lv in 1..(current_level + 1) {
+                    for level in &levels[1..=current_level] {
                         code.push('.');
-                        code.push_str(&levels[lv].to_string());
+                        code.push_str(&level.to_string());
                     }
 
                     write!(
                         writer,
-                        "| {} | {} | {} | {} | {} | {} |",
+                        "| {} | {} | {} | {} | {} | {}..{} |",
                         code,
                         camel_to_spaced_pascal(&element_part.replace("[x]", "")),
                         element.short,
                         element.definition,
                         reduce_datatypes(&element.datatype),
-                        format!("{}..{}", element.min, element.max)
+                        element.min, element.max
                     )?;
                     if let Some(binding) = &element.binding {
                         write!(writer, " {} |", binding)?;
@@ -264,10 +268,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
-
 fn load_structure_definition_files(
-    files: &Vec<String>,
+    files: &[String],
 ) -> Result<Vec<DocInfo>, Box<dyn std::error::Error>> {
     let mut docs = Vec::<DocInfo>::new();
     for file in files.iter() {
@@ -276,7 +278,7 @@ fn load_structure_definition_files(
                 docs.push(doc_info);
             }
             Err(e) => {
-                println!("Error: {}", e);
+                println!("Error reading file '{}': {}", file, e);
             }
         }
     }
@@ -308,12 +310,22 @@ fn load_single_structure_definition_file(
                 if let Some(code) = dt["code"].as_str() {
                     let code = code.to_string();
                     if code.starts_with("http") {
-                        match get_slice_after_last_occurrence(&code, '/') {
-                            Some(end) => {
-                                datatype.push(end);
-                            }
-                            None => {}
+                        if let Some(end) = get_slice_after_last_occurrence(&code, '/') {
+                            datatype.push(end);
                         };
+                    } else if code == "Reference" {
+                        // TODO: does not distunguish between Reference and direct datatype
+                        if let Some(profiles) = dt["targetProfile"].as_array() {
+                            for profile_value in profiles {
+                                if let Some(profile) = profile_value.as_str() {
+                                    let profile = profile.to_string();
+                                    if let Some(end) = get_slice_after_last_occurrence(&profile, '/') {
+                                        datatype.push(end);
+                                    };
+                                }
+                                
+                            }
+                        }
                     } else {
                         datatype.push(code);
                     }
@@ -329,6 +341,7 @@ fn load_single_structure_definition_file(
         } else {
             element["min"].to_string()
         };
+
         let max = element["max"].as_str().ok_or("Missing max cardinality")?;
         let binding = element["binding"]["description"]
             .as_str()
@@ -336,6 +349,7 @@ fn load_single_structure_definition_file(
         let binding_strength = element["binding"]["strength"]
             .as_str()
             .map(|s| s.to_string());
+
         elements.push(ElementInfo {
             id: element_id.to_string(),
             short,
@@ -346,6 +360,7 @@ fn load_single_structure_definition_file(
             binding,
             binding_strength,
         });
+
     }
     Ok(DocInfo {
         id: id.to_string(),
