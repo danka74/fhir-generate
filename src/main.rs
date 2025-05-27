@@ -3,9 +3,7 @@ mod utils;
 use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
 use clap::{Args, Parser, Subcommand};
 use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    path::PathBuf,
+    collections::{HashMap, HashSet}, fs::File, io::{BufWriter, Write}, path::PathBuf
 };
 use utils::{camel_to_spaced_pascal, reduce_datatypes};
 
@@ -32,6 +30,8 @@ enum Commands {
     Mindmap(MindmapArgs),
     /// Generate a markdown table in a separate file for each structure definition
     Table(TableArgs),
+    /// Generate a markdown table in a single file based on obligations of a structure definition
+    Obligations(ObligationsArgs),
 }
 
 #[derive(Args, Debug)]
@@ -67,6 +67,20 @@ struct TableArgs {
     #[command(flatten)]
     common: CommonArgs,
 
+    /// Hide code
+    #[arg(short, long)]
+    code_hide: bool,
+
+    /// Prefix used for code generation
+    #[arg(short, long, default_value = "A")]
+    prefix_code: String,
+}
+
+#[derive(Args, Debug)]
+struct ObligationsArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+
     /// Prefix used for code generation
     #[arg(short, long, default_value = "A")]
     prefix_code: String,
@@ -82,6 +96,7 @@ struct ElementInfo {
     max: String,
     binding: Option<String>,
     binding_strength: Option<String>,
+    obligation: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -95,6 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::PlantUml(args) => {
+            // first load all structure definitions into in-memory structs
             let docs = load_structure_definition_files(&args.common.files)?;
             let output = File::create(args.output_file)?;
             let mut writer = BufWriter::new(output); // Create a buffered writer
@@ -120,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for datatype in element.datatype.iter() {
                             // TODO: or use a hashmap for faster lookup
                             // TODO: look also for Reference(X or T)
-                            if let Some(_) = docs.iter().position(|d| datatype == &d.id) {
+                            if docs.iter().any(|d| datatype == &d.id) {
                                 relations.push((
                                     element_part.clone(),
                                     datatype.clone(),
@@ -167,6 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             writeln!(writer, "@enduml")?;
         }
         Commands::Mindmap(args) => {
+            // first load all structure definitions into in-memory structs
             let docs = load_structure_definition_files(&args.common.files)?;
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
@@ -194,6 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Commands::Table(args) => {
+            // first load all structure definitions into in-memory structs
             let docs = load_structure_definition_files(&args.common.files)?;
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
@@ -228,6 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         std::cmp::Ordering::Less => {
                             levels.pop();
                             current_level -= 1;
+                            levels[current_level] += 1;
                         }
                         std::cmp::Ordering::Equal => {
                             levels[current_level] += 1;
@@ -242,12 +261,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     write!(
                         writer,
                         "| {} | {} | {} | {} | {} | {}..{} |",
-                        code,
+                        element.id,
                         camel_to_spaced_pascal(&element_part.replace("[x]", "")),
                         element.short,
                         element.definition,
                         reduce_datatypes(&element.datatype),
-                        element.min, element.max
+                        element.min,
+                        element.max
                     )?;
                     if let Some(binding) = &element.binding {
                         write!(writer, " {} |", binding)?;
@@ -261,6 +281,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     writeln!(writer)?;
                 }
+            }
+        }
+        Commands::Obligations(args) => {
+            // first load all structure definitions into in-memory structs
+            let docs = load_structure_definition_files(&args.common.files)?;
+            for doc in docs.iter() {
+                println!("processing: {}", doc.id);
+                let output = File::create(format!("{}.md", doc.id))?;
+                let mut writer = BufWriter::new(output); // Create a buffered writer
+
+                writeln!(writer, "# {}", doc.id)?;
+
+                let mut table = Vec::<(String, HashMap<String, Vec<String>>)>::new();
+                let mut unique_actors = HashSet::<String>::new();
+              
+                for element in doc.elements.iter() {
+                    let hier_level: usize = count_char_occurrences(&element.id, '.');
+                    let element_part: String = if hier_level > 0 {
+                        get_slice_after_last_occurrence(&element.id, '.')
+                            .ok_or("Wrong element part")?
+                    } else {
+                        element.id.clone()
+                    };
+
+                    if element.obligation.is_empty() {
+                        continue;
+                    }
+
+                    table.push((
+                        element_part.clone(),
+                        HashMap::<String, Vec<String>>::new(),
+                    ));
+                    
+                    for obligation in &element.obligation {
+                        let mut hash = &mut table.last_mut().ok_or("Error in obligations list")?.1;
+                        let actor = obligation.0.clone();
+                        unique_actors.insert(actor.clone());
+                        let code = obligation.1.clone();
+                        let codes = hash.entry(actor).or_insert(Vec::new());
+                        codes.push(code);
+                    }
+                }
+
+                let no_of_actors = unique_actors.len();
+
+                write!(writer, "| Element ")?;
+                for actor in unique_actors.iter() {
+                    let actor_name = get_slice_after_last_occurrence(actor, '/').ok_or("Wrong actor URL")?;
+                    write!(writer, "| {} ", actor_name)?;
+                }
+                writeln!(writer, "|")?;
+                write!(writer, "| --- ")?;
+                for _ in 0..no_of_actors {
+                    write!(writer, "| --- ")?;
+                }
+                writeln!(writer, "|")?;
+
+                for (element, hash) in table.iter() {
+                    write!(writer, "| {} ", camel_to_spaced_pascal(element))?;
+                    for actor in unique_actors.iter() {
+                        if let Some(codes) = hash.get(actor) {
+                            write!(writer, "| {} ", codes.join(", "))?;
+                        } else {
+                            write!(writer, "| ")?;
+                        }
+                    }
+                    writeln!(writer, "|")?;
+                }                
+
             }
         }
     }
@@ -319,15 +408,43 @@ fn load_single_structure_definition_file(
                             for profile_value in profiles {
                                 if let Some(profile) = profile_value.as_str() {
                                     let profile = profile.to_string();
-                                    if let Some(end) = get_slice_after_last_occurrence(&profile, '/') {
+                                    if let Some(end) =
+                                        get_slice_after_last_occurrence(&profile, '/')
+                                    {
                                         datatype.push(end);
                                     };
                                 }
-                                
                             }
                         }
                     } else {
                         datatype.push(code);
+                    }
+                }
+            }
+        }
+
+        let mut obligation = Vec::<(String, String)>::new();
+        if let Some(ext_array) = element["extension"].as_array() {
+            for ext in ext_array {
+                if ext["url"].as_str() == Some("http://hl7.org/fhir/StructureDefinition/obligation")
+                {
+                    let mut code = String::new();
+                    let mut actor = String::new();
+                    if let Some(ext2_array) = ext["extension"].as_array() {
+                        for ext2 in ext2_array {
+                            if ext2["url"].as_str() == Some("code") {
+                                if let Some(value) = ext2["valueCode"].as_str() {
+                                    code = value.to_string();
+                                }
+                            } else if ext2["url"].as_str() == Some("actor") {
+                                if let Some(value) = ext2["valueCanonical"].as_str() {
+                                    actor = value.to_string();
+                                }
+                            }
+                        }
+                    }
+                    if !code.is_empty() && !actor.is_empty() {
+                        obligation.push((actor, code));
                     }
                 }
             }
@@ -359,8 +476,8 @@ fn load_single_structure_definition_file(
             max: max.to_string(),
             binding,
             binding_strength,
+            obligation,
         });
-
     }
     Ok(DocInfo {
         id: id.to_string(),

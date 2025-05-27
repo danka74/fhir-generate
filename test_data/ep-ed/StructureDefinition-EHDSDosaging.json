@@ -14,7 +14,7 @@
   "name" : "EHDSDosaging",
   "title" : "Dosaging model",
   "status" : "draft",
-  "date" : "2025-03-16T14:50:04+01:00",
+  "date" : "2025-05-27T17:12:35+02:00",
   "publisher" : "Xt-EHR",
   "contact" : [{
     "name" : "Xt-EHR",
@@ -36,6 +36,10 @@
   "baseDefinition" : "http://hl7.org/fhir/StructureDefinition/Base",
   "derivation" : "specialization",
   "snapshot" : {
+    "extension" : [{
+      "url" : "http://hl7.org/fhir/tools/StructureDefinition/snapshot-base-version",
+      "valueString" : "5.0.0"
+    }],
     "element" : [{
       "id" : "EHDSDosaging",
       "path" : "EHDSDosaging",

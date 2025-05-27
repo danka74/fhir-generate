@@ -3,3 +3,6 @@
 *.md
 *.docx
 !README.md
+output.plantuml
+test_data/*.plantuml
+test_data/*.md
