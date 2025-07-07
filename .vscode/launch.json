@@ -21,11 +21,14 @@
             },
             "args": [
                 "plant-uml",
-                "StructureDefinition-EHDSDeviceUse.json",
-                ".md",
-                "EHDSDevice.md",
-                "EHDSHealthProfessional.md",
-                "EHDSRelatedPerson.md"
+                "-e",
+                "./test_data/ep-ed/StructureDefinition-EHDSMedicationDispense.json",
+                "./test_data/ep-ed/StructureDefinition-EHDSMedication.json ",
+                "./test_data/ep-ed/StructureDefinition-EHDSDosaging.json",
+                "./test_data/ep-ed/StructureDefinition-EHDSPatient.json",
+                "./test_data/ep-ed/StructureDefinition-EHDSHealthProfessional.json",
+                "./test_data/ep-ed/StructureDefinition-EHDSOrganization.json",
+                "./test_data/ep-ed/StructureDefinition-EHDSDevice.json",
             ],
             "cwd": "${workspaceFolder}"
         },

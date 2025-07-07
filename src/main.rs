@@ -3,7 +3,10 @@ mod utils;
 use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
 use clap::{Args, Parser, Subcommand};
 use std::{
-    collections::{HashMap, HashSet}, fs::File, io::{BufWriter, Write}, path::PathBuf
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::{BufWriter, Write},
+    path::PathBuf,
 };
 use utils::{camel_to_spaced_pascal, reduce_datatypes};
 
@@ -32,6 +35,22 @@ enum Commands {
     Table(TableArgs),
     /// Generate a markdown table in a single file based on obligations of a structure definition
     Obligations(ObligationsArgs),
+    /// Generate plantUml diagram from an instances file
+    Instances(InstancesArgs),
+}
+
+#[derive(Args, Debug)]
+struct InstancesArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+
+    /// Hide data elements
+    #[arg(short, long)]
+    elements_hide: bool,
+
+    /// Output file name
+    #[arg(short, long, default_value = "instances_output.plantuml")]
+    output_file: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -97,13 +116,21 @@ struct ElementInfo {
     binding: Option<String>,
     binding_strength: Option<String>,
     obligation: Vec<(String, String)>,
+    requirements: Option<String>,
 }
 
 #[derive(Debug)]
-struct DocInfo {
+struct StructureDefInfo {
     id: String,
     elements: Vec<ElementInfo>,
 }
+
+#[derive(Debug)]
+struct InstanceInfo {
+    id: String,
+    elements: Vec<ElementInfo>,
+}
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -123,27 +150,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
                 writeln!(writer, "class **{}** {{", doc.id)?;
-                let mut relations = Vec::<(String, String, String, String)>::new();
+                let mut relations = String::new();
+
+                // let mut _element_number = 0;
 
                 // TODO: Assumes elements appear in the right order. Could sort on ElementDefinition.id but that would change the stated order.
                 for element in doc.elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
                         let hier_level = count_char_occurrences(&element.id, '.') * 2;
+                        // _element_number += 1;
 
                         // if the datatype is one of the classes drawn, add a relation instead of a class element
                         // TODO: element is removed from element list if there is one datatype that is among the structure definitions
                         let mut show_element = true;
-                        for datatype in element.datatype.iter() {
-                            // TODO: or use a hashmap for faster lookup
-                            // TODO: look also for Reference(X or T)
-                            if docs.iter().any(|d| datatype == &d.id) {
-                                relations.push((
-                                    element_part.clone(),
-                                    datatype.clone(),
-                                    element.min.clone(),
-                                    element.max.clone(),
-                                ));
-                                show_element = false;
+                        if element_part.ends_with("[x]") {
+                            let clean_part = element_part.replace("[x]", "");
+                            let choice = format!("{}{}", doc.id, clean_part);
+                            let mut local_relations = String::new();
+                            for datatype in element.datatype.iter() {
+                                // TODO: or use a hashmap for faster lookup
+                                // TODO: look also for Reference(X or T)
+                                if docs.iter().any(|d| datatype == &d.id) {
+                                    local_relations += &format!(
+                                        "{} .. \"**{}**\" : {} >\n",
+                                        choice, datatype, clean_part
+                                    );
+                                    // will hade element if there is just one datatype that is another class in the diagram,
+                                    show_element = false; // do not show element if it is a choice
+                                }
+                            }
+                            if !show_element {
+                                relations += &format!("<> {}\n", choice);
+                                relations += &format!(
+                                    "\"**{}**\" -- \"{}..{}\" {} : {} >\n",
+                                    doc.id, element.min, element.max, choice, clean_part
+                                );
+                                relations += &local_relations;
+                            }
+                        } else {
+                            for datatype in element.datatype.iter() {
+                                // TODO: or use a hashmap for faster lookup
+                                // TODO: look also for Reference(X or T)
+                                if docs.iter().any(|d| datatype == &d.id) {
+                                    relations += &format!(
+                                        "\"**{}**\" -- \"{}..{}\" \"**{}**\" : {} >\n",
+                                        doc.id, element.min, element.max, datatype, element_part
+                                    );
+                                    show_element = false; // do not show element if datatype is another class in the diagram
+                                }
                             }
                         }
 
@@ -165,19 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 writeln!(writer, "}}")?;
 
-                for rel in relations {
-                    writeln!(
-                        writer,
-                        "\"**{}**\" -- \"{}..{}\" \"**{}**\" : {} >",
-                        doc.id,
-                        rel.2,
-                        rel.3,
-                        rel.1,
-                        rel.0.replace("[x]", "")
-                    )?;
-                }
-
-                writeln!(writer)?;
+                write!(writer, "{}", relations)?;
             }
 
             writeln!(writer, "@enduml")?;
@@ -222,9 +264,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 writeln!(
                     writer,
-                    "| Code | Element | Short | Definition | Datatype | Cardinality | Preferred Code System | Binding Strength |"
+                    "| Code | Path | Element | Short | Definition | Datatype | Cardinality | Preferred Code System | Binding Strength | Requirements |"
                 )?;
-                writeln!(writer, "| --- | --- | --- | --- | --- | --- | --- | --- |")?;
+                writeln!(
+                    writer,
+                    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- "
+                )?;
 
                 let mut levels = Vec::<usize>::new();
                 levels.push(0);
@@ -258,13 +303,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         code.push_str(&level.to_string());
                     }
 
+                    let clean_part = element_part.replace("[x]", "");
                     write!(
                         writer,
-                        "| {} | {} | {} | {} | {} | {}..{} |",
-                        element.id,
-                        camel_to_spaced_pascal(&element_part.replace("[x]", "")),
+                        "| {} | {}{} | {} | {} | {} | {} | {}..{} |",
+                        code,
+                        ".".repeat(current_level),
+                        clean_part,
+                        camel_to_spaced_pascal(&clean_part),
                         element.short,
-                        element.definition,
+                        element.definition.replace("\n", "<br/>"),
                         reduce_datatypes(&element.datatype),
                         element.min,
                         element.max
@@ -279,13 +327,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         write!(writer, " |")?;
                     }
+                    if let Some(requirements) = &element.requirements {
+                        write!(writer, " {} |", requirements.replace("\n", "<br/>"))?;
+                    } else {
+                        write!(writer, " |")?;
+                    }
                     writeln!(writer)?;
                 }
             }
         }
         Commands::Obligations(args) => {
             // first load all structure definitions into in-memory structs
-            let docs = load_structure_definition_files(&args.common.files)?;
+            let docs: Vec<StructureDefInfo> = load_structure_definition_files(&args.common.files)?;
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
                 let output = File::create(format!("{}.md", doc.id))?;
@@ -295,7 +348,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let mut table = Vec::<(String, HashMap<String, Vec<String>>)>::new();
                 let mut unique_actors = HashSet::<String>::new();
-              
+
                 for element in doc.elements.iter() {
                     let hier_level: usize = count_char_occurrences(&element.id, '.');
                     let element_part: String = if hier_level > 0 {
@@ -309,13 +362,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
-                    table.push((
-                        element_part.clone(),
-                        HashMap::<String, Vec<String>>::new(),
-                    ));
-                    
+                    table.push((element_part.clone(), HashMap::<String, Vec<String>>::new()));
+
                     for obligation in &element.obligation {
-                        let mut hash = &mut table.last_mut().ok_or("Error in obligations list")?.1;
+                        let hash = &mut table.last_mut().ok_or("Error in obligations list")?.1;
                         let actor = obligation.0.clone();
                         unique_actors.insert(actor.clone());
                         let code = obligation.1.clone();
@@ -328,7 +378,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 write!(writer, "| Element ")?;
                 for actor in unique_actors.iter() {
-                    let actor_name = get_slice_after_last_occurrence(actor, '/').ok_or("Wrong actor URL")?;
+                    let actor_name =
+                        get_slice_after_last_occurrence(actor, '/').ok_or("Wrong actor URL")?;
                     write!(writer, "| {} ", actor_name)?;
                 }
                 writeln!(writer, "|")?;
@@ -348,19 +399,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     writeln!(writer, "|")?;
-                }                
-
+                }
             }
+        }
+        Commands::Instances(args) => {
+            let docs: Vec<InstanceInfo> = load_instance_files(&args.common.files)?;
+            let output = File::create(args.output_file)?;
+            let mut writer = BufWriter::new(output); // Create a buffered writer
+            writeln!(
+                writer,
+                "@startuml\nskinparam linetype polyline\nhide circle\nhide stereotype\nhide methods\n"
+            )?;
+
+            for doc in docs.iter() {
+                println!("processing: {}", doc.id);
+            }
+            writeln!(writer, "@enduml")?;
         }
     }
 
     Ok(())
 }
 
+fn load_instance_files(files: &[String]) -> Result<Vec<InstanceInfo>, Box<dyn std::error::Error>> {
+    let mut docs = Vec::<InstanceInfo>::new();
+
+    for file in files.iter() {
+        match load_single_instance_file(file) {
+            Ok(doc_info) => {
+                docs.push(doc_info);
+            }
+            Err(e) => {
+                println!("Error reading file '{}': {}", file, e);
+            }
+        }
+    }
+    Ok(docs)
+}
+
+fn load_single_instance_file(file: &str) -> Result<InstanceInfo, Box<dyn std::error::Error>> {
+    todo!()
+}
+
 fn load_structure_definition_files(
     files: &[String],
-) -> Result<Vec<DocInfo>, Box<dyn std::error::Error>> {
-    let mut docs = Vec::<DocInfo>::new();
+) -> Result<Vec<StructureDefInfo>, Box<dyn std::error::Error>> {
+    let mut docs = Vec::<StructureDefInfo>::new();
     for file in files.iter() {
         match load_single_structure_definition_file(file) {
             Ok(doc_info) => {
@@ -376,7 +460,7 @@ fn load_structure_definition_files(
 
 fn load_single_structure_definition_file(
     file: &String,
-) -> Result<DocInfo, Box<dyn std::error::Error>> {
+) -> Result<StructureDefInfo, Box<dyn std::error::Error>> {
     let doc = load_json_from_file(file)?;
     let id = doc["id"].as_str().ok_or("Missing id")?;
     let snapshot = doc["snapshot"]["element"]
@@ -393,6 +477,10 @@ fn load_single_structure_definition_file(
             .as_str()
             .ok_or("Missing definition")?
             .to_string();
+        let requirements = element["requirements"]
+            .as_str()
+            .map(|s| s.to_string());
+
         let mut datatype = Vec::<String>::new();
         if let Some(type_array) = element["type"].as_array() {
             for dt in type_array {
@@ -477,9 +565,10 @@ fn load_single_structure_definition_file(
             binding,
             binding_strength,
             obligation,
+            requirements,
         });
     }
-    Ok(DocInfo {
+    Ok(StructureDefInfo {
         id: id.to_string(),
         elements,
     })
