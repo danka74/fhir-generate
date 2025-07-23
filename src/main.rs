@@ -1,6 +1,9 @@
 mod utils;
 
-use crate::utils::{count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file};
+use crate::utils::{
+    count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file,
+    generate_code
+};
 use clap::{Args, Parser, Subcommand};
 use std::{
     collections::{HashMap, HashSet},
@@ -131,7 +134,6 @@ struct InstanceInfo {
     elements: Vec<ElementInfo>,
 }
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -255,7 +257,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Table(args) => {
             // first load all structure definitions into in-memory structs
             let docs = load_structure_definition_files(&args.common.files)?;
-            for doc in docs.iter() {
+            let alpha_index_code = (args.prefix_code == "A");
+            for (docNum, doc) in docs.iter().enumerate() {
+                let prefix = if alpha_index_code {
+                    generate_code(docNum)
+                } else {
+                    args.prefix_code.clone()
+                };
                 println!("processing: {}", doc.id);
                 let output = File::create(format!("{}.md", doc.id))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
@@ -283,6 +291,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         element.id.clone()
                     };
+                    // if (hier_level as isize - current_level as isize).abs() > 1 {
+                    //     return Err(format!("Hierarchical level difference is too large: {}", element.id).into());
+                    // }
                     match hier_level.cmp(&current_level) {
                         std::cmp::Ordering::Greater => {
                             levels.push(1);
@@ -297,7 +308,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             levels[current_level] += 1;
                         }
                     }
-                    let mut code = args.prefix_code.clone();
+                    let mut code = prefix.clone();
                     for level in &levels[1..=current_level] {
                         code.push('.');
                         code.push_str(&level.to_string());
@@ -334,6 +345,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     writeln!(writer)?;
                 }
+
+
             }
         }
         Commands::Obligations(args) => {
@@ -477,9 +490,7 @@ fn load_single_structure_definition_file(
             .as_str()
             .ok_or("Missing definition")?
             .to_string();
-        let requirements = element["requirements"]
-            .as_str()
-            .map(|s| s.to_string());
+        let requirements = element["requirements"].as_str().map(|s| s.to_string());
 
         let mut datatype = Vec::<String>::new();
         if let Some(type_array) = element["type"].as_array() {
