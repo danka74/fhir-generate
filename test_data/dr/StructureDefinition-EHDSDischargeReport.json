@@ -256,22 +256,6 @@
       }]
     },
     {
-      "id" : "EHDSDischargeReport.presentedForm",
-      "path" : "EHDSDischargeReport.presentedForm",
-      "short" : "A narrative easy-to-read representation of the full data set, e.g. PDF-version of a document",
-      "definition" : "A narrative easy-to-read representation of the full data set, e.g. PDF-version of a document",
-      "min" : 0,
-      "max" : "*",
-      "base" : {
-        "path" : "EHDSDataSet.presentedForm",
-        "min" : 0,
-        "max" : "*"
-      },
-      "type" : [{
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSAttachment"
-      }]
-    },
-    {
       "id" : "EHDSDischargeReport.header.documentType",
       "path" : "EHDSDischargeReport.header.documentType",
       "short" : "Document type",
@@ -536,6 +520,66 @@
       }
     },
     {
+      "id" : "EHDSDischargeReport.header.intendedRecipient[x]",
+      "path" : "EHDSDischargeReport.header.intendedRecipient[x]",
+      "short" : "Intended recipient",
+      "definition" : "Information recipient (intended recipient or recipients of the report, additional recipients might be identified by the ordering party, e.g. GP, other specialist), if applicable",
+      "min" : 0,
+      "max" : "*",
+      "base" : {
+        "path" : "EHDSDischargeReport.header.intendedRecipient[x]",
+        "min" : 0,
+        "max" : "*"
+      },
+      "type" : [{
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSPatient"
+      },
+      {
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSRelatedPerson"
+      },
+      {
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSHealthProfessional"
+      },
+      {
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSOrganisation"
+      },
+      {
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSDevice"
+      }]
+    },
+    {
+      "id" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
+      "path" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
+      "short" : "Health insurance and payment information",
+      "definition" : "Health insurance and payment information",
+      "min" : 0,
+      "max" : "*",
+      "base" : {
+        "path" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
+        "min" : 0,
+        "max" : "*"
+      },
+      "type" : [{
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSCoverage"
+      }]
+    },
+        {
+      "id" : "EHDSDischargeReport.presentedForm",
+      "path" : "EHDSDischargeReport.presentedForm",
+      "short" : "A narrative easy-to-read representation of the full data set, e.g. PDF-version of a document",
+      "definition" : "A narrative easy-to-read representation of the full data set, e.g. PDF-version of a document",
+      "min" : 0,
+      "max" : "*",
+      "base" : {
+        "path" : "EHDSDataSet.presentedForm",
+        "min" : 0,
+        "max" : "*"
+      },
+      "type" : [{
+        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSAttachment"
+      }]
+    },
+    {
       "id" : "EHDSDischargeReport.knowledgeResources",
       "path" : "EHDSDischargeReport.knowledgeResources",
       "short" : "Related documents and information sources",
@@ -581,50 +625,6 @@
       },
       "type" : [{
         "code" : "Reference"
-      }]
-    },
-    {
-      "id" : "EHDSDischargeReport.header.intendedRecipient[x]",
-      "path" : "EHDSDischargeReport.header.intendedRecipient[x]",
-      "short" : "Intended recipient",
-      "definition" : "Information recipient (intended recipient or recipients of the report, additional recipients might be identified by the ordering party, e.g. GP, other specialist), if applicable",
-      "min" : 0,
-      "max" : "*",
-      "base" : {
-        "path" : "EHDSDischargeReport.header.intendedRecipient[x]",
-        "min" : 0,
-        "max" : "*"
-      },
-      "type" : [{
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSPatient"
-      },
-      {
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSRelatedPerson"
-      },
-      {
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSHealthProfessional"
-      },
-      {
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSOrganisation"
-      },
-      {
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSDevice"
-      }]
-    },
-    {
-      "id" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
-      "path" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
-      "short" : "Health insurance and payment information",
-      "definition" : "Health insurance and payment information",
-      "min" : 0,
-      "max" : "*",
-      "base" : {
-        "path" : "EHDSDischargeReport.header.healthInsuranceAndPaymentInformation",
-        "min" : 0,
-        "max" : "*"
-      },
-      "type" : [{
-        "code" : "https://www.xt-ehr.eu/specifications/fhir/StructureDefinition/EHDSCoverage"
       }]
     },
     {

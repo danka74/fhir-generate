@@ -2,6 +2,8 @@
 *.plantuml
 *.md
 *.docx
+*.png
+*.svg
 !README.md
 output.plantuml
 test_data/*.plantuml
