@@ -30,7 +30,7 @@ e.g.
 ```bash
 fhir-generate table *.json
 
-fhir-generate plant-uml -e plant-uml -e StructureDefinition-EHDSMedicationDispense.json StructureDefinition-EHDSMedication.json
+fhir-generate plant-uml -e StructureDefinition-EHDSMedicationDispense.json StructureDefinition-EHDSMedication.json
 ```
 
 ## Contributing
