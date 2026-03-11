@@ -1,10 +1,10 @@
 mod utils;
 
 use crate::utils::{
-    count_char_occurrences, get_slice_after_last_occurrence, load_json_from_file,
-    generate_code
+    count_char_occurrences, generate_code, get_slice_after_last_occurrence, load_json_from_file,
 };
 use clap::{Args, Parser, Subcommand};
+use easy_tree::Tree;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
@@ -108,7 +108,7 @@ struct ObligationsArgs {
     prefix_code: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ElementInfo {
     id: String,
     short: String,
@@ -128,10 +128,35 @@ struct StructureDefInfo {
     elements: Vec<ElementInfo>,
 }
 
+struct StructureDefTreeInfo {
+    id: String,
+    element_tree: Tree<ElementInfo>,
+}
+
 #[derive(Debug)]
 struct InstanceInfo {
     id: String,
     elements: Vec<ElementInfo>,
+}
+
+trait SearchableTree<T> {
+    fn find_first<F>(&self, predicate: F) -> Option<usize>
+        where
+        F: Fn(&T) -> bool;
+}
+
+impl SearchableTree<ElementInfo> for Tree<ElementInfo> {
+    fn find_first<F>(&self, predicate: F) -> Option<usize>
+        where
+        F: Fn(&ElementInfo) -> bool
+    {
+        for node in self.iter() {
+            if predicate(node.1) {
+                return Some(node.0);
+            }
+        }
+        None
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -157,11 +182,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // let mut _element_number = 0;
 
                 // TODO: Assumes elements appear in the right order. Could sort on ElementDefinition.id but that would change the stated order.
-                for element in doc.elements.iter() {
+                let mut sorted_elements = doc.elements.clone();
+                sorted_elements.sort_by(|a, b| a.id.cmp(&b.id));
+                for element in sorted_elements.iter() {
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
+                        if element.max == "0" {
+                            // do not show elements with max cardinality 0
+                            continue;
+                        }
                         let hier_level = count_char_occurrences(&element.id, '.') * 2;
-                        // _element_number += 1;
-
                         // if the datatype is one of the classes drawn, add a relation instead of a class element
                         // TODO: element is removed from element list if there is one datatype that is among the structure definitions
                         let mut show_element = true;
@@ -239,6 +268,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(writer, "* {}", doc.id)?;
 
                 for element in doc.elements.iter() {
+                    if element.max == "0" {
+                        // do not show elements with max cardinality 0
+                        continue;
+                    }
                     if let Some(element_part) = get_slice_after_last_occurrence(&element.id, '.') {
                         let hier_level: usize = count_char_occurrences(&element.id, '.') + 1;
                         writeln!(
@@ -257,10 +290,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Table(args) => {
             // first load all structure definitions into in-memory structs
             let docs = load_structure_definition_files(&args.common.files)?;
-            let alpha_index_code = (args.prefix_code == "A");
-            for (docNum, doc) in docs.iter().enumerate() {
+            let alpha_index_code = args.prefix_code == "A";
+            for (doc_num, doc) in docs.iter().enumerate() {
                 let prefix = if alpha_index_code {
-                    generate_code(docNum)
+                    generate_code(doc_num)
                 } else {
                     args.prefix_code.clone()
                 };
@@ -282,8 +315,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut levels = Vec::<usize>::new();
                 levels.push(0);
                 let mut current_level: usize = 0;
-
-                for element in doc.elements.iter() {
+                let mut sorted_elements = doc.elements.clone();
+                // sorted_elements.sort_by(|a, b| a.id.cmp(&b.id));
+                for element in sorted_elements.iter() {
                     let hier_level: usize = count_char_occurrences(&element.id, '.');
                     let element_part: String = if hier_level > 0 {
                         get_slice_after_last_occurrence(&element.id, '.')
@@ -345,8 +379,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     writeln!(writer)?;
                 }
-
-
             }
         }
         Commands::Obligations(args) => {
@@ -363,6 +395,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut unique_actors = HashSet::<String>::new();
 
                 for element in doc.elements.iter() {
+                    if element.max == "0" {
+                        // do not show elements with max cardinality 0
+                        continue;
+                    }
                     let hier_level: usize = count_char_occurrences(&element.id, '.');
                     let element_part: String = if hier_level > 0 {
                         get_slice_after_last_occurrence(&element.id, '.')
@@ -450,7 +486,7 @@ fn load_instance_files(files: &[String]) -> Result<Vec<InstanceInfo>, Box<dyn st
     Ok(docs)
 }
 
-fn load_single_instance_file(file: &str) -> Result<InstanceInfo, Box<dyn std::error::Error>> {
+fn load_single_instance_file(_file: &str) -> Result<InstanceInfo, Box<dyn std::error::Error>> {
     todo!()
 }
 
@@ -502,7 +538,7 @@ fn load_single_structure_definition_file(
                             datatype.push(end);
                         };
                     } else if code == "Reference" {
-                        // TODO: does not distunguish between Reference and direct datatype
+                        // TODO: does not distinguish between Reference and direct datatype
                         if let Some(profiles) = dt["targetProfile"].as_array() {
                             for profile_value in profiles {
                                 if let Some(profile) = profile_value.as_str() {
@@ -578,9 +614,155 @@ fn load_single_structure_definition_file(
             obligation,
             requirements,
         });
+
+        
     }
     Ok(StructureDefInfo {
         id: id.to_string(),
         elements,
+    })
+}
+
+fn load_single_structure_definition_file_into_tree(
+    file: &String,
+) -> Result<StructureDefTreeInfo, Box<dyn std::error::Error>> {
+    let doc = load_json_from_file(file)?;
+    let id = doc["id"].as_str().ok_or("Missing id")?;
+    let snapshot = doc["snapshot"]["element"]
+        .as_array()
+        .ok_or("Missing snapshot")?;
+    let mut element_tree: Tree<ElementInfo> = Tree::new();
+    // let mut elements = Vec::<ElementInfo>::new();
+    for element in snapshot.iter() {
+        let element_id = element["id"].as_str().ok_or("Missing element id")?;
+        let parent_id = if let Some(last_index) = element_id.rfind('.') {
+            Some(&element_id[..last_index])
+        } else {
+            None
+        };
+        let parent_node = if let Some(pid) = parent_id {
+            element_tree.find_first(|e| e.id == pid)
+        } else {
+            None
+        };
+        let short = element["short"]
+            .as_str()
+            .ok_or("Missing short description")?
+            .to_string();
+        let definition = element["definition"]
+            .as_str()
+            .ok_or("Missing definition")?
+            .to_string();
+        let requirements = element["requirements"].as_str().map(|s| s.to_string());
+
+        let mut datatype = Vec::<String>::new();
+        if let Some(type_array) = element["type"].as_array() {
+            for dt in type_array {
+                if let Some(code) = dt["code"].as_str() {
+                    let code = code.to_string();
+                    if code.starts_with("http") {
+                        if let Some(end) = get_slice_after_last_occurrence(&code, '/') {
+                            datatype.push(end);
+                        };
+                    } else if code == "Reference" {
+                        // TODO: does not distinguish between Reference and direct datatype
+                        if let Some(profiles) = dt["targetProfile"].as_array() {
+                            for profile_value in profiles {
+                                if let Some(profile) = profile_value.as_str() {
+                                    let profile = profile.to_string();
+                                    if let Some(end) =
+                                        get_slice_after_last_occurrence(&profile, '/')
+                                    {
+                                        datatype.push(end);
+                                    };
+                                }
+                            }
+                        }
+                    } else {
+                        datatype.push(code);
+                    }
+                }
+            }
+        }
+
+        let mut obligation = Vec::<(String, String)>::new();
+        if let Some(ext_array) = element["extension"].as_array() {
+            for ext in ext_array {
+                if ext["url"].as_str() == Some("http://hl7.org/fhir/StructureDefinition/obligation")
+                {
+                    let mut code = String::new();
+                    let mut actor = String::new();
+                    if let Some(ext2_array) = ext["extension"].as_array() {
+                        for ext2 in ext2_array {
+                            if ext2["url"].as_str() == Some("code") {
+                                if let Some(value) = ext2["valueCode"].as_str() {
+                                    code = value.to_string();
+                                }
+                            } else if ext2["url"].as_str() == Some("actor") {
+                                if let Some(value) = ext2["valueCanonical"].as_str() {
+                                    actor = value.to_string();
+                                }
+                            }
+                        }
+                    }
+                    if !code.is_empty() && !actor.is_empty() {
+                        obligation.push((actor, code));
+                    }
+                }
+            }
+        }
+
+        let min = if element["min"].is_string() {
+            element["min"]
+                .as_str()
+                .ok_or(format!("Missing min cardinality: {:?}", element["min"]))?
+                .to_string()
+        } else {
+            element["min"].to_string()
+        };
+
+        let max = element["max"].as_str().ok_or("Missing max cardinality")?;
+        let binding = element["binding"]["description"]
+            .as_str()
+            .map(|s| s.to_string());
+        let binding_strength = element["binding"]["strength"]
+            .as_str()
+            .map(|s| s.to_string());
+
+        if let Some(parent) = parent_node {
+            element_tree.add_child(
+                parent,
+                ElementInfo {
+                    id: element_id.to_string(),
+                    short: short.clone(),
+                    definition: definition.clone(),
+                    datatype: datatype.clone(),
+                    min: min.clone(),
+                    max: max.to_string(),
+                    binding: binding.clone(),
+                    binding_strength: binding_strength.clone(),
+                    obligation: obligation.clone(),
+                    requirements: requirements.clone(),
+                },
+            );
+        } else {
+            element_tree.add_node(ElementInfo {
+                id: element_id.to_string(),
+                short: short.clone(),
+                definition: definition.clone(),
+                datatype: datatype.clone(),
+                min: min.clone(),
+                max: max.to_string(),
+                binding: binding.clone(),
+                binding_strength: binding_strength.clone(),
+                obligation: obligation.clone(),
+                requirements: requirements.clone(),
+            });
+        }
+        
+    }
+    Ok(StructureDefTreeInfo {
+        id: id.to_string(),
+        element_tree,
     })
 }
