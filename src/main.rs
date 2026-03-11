@@ -479,14 +479,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for actor in unique_actors.iter() {
                         if let Some(codes) = hash.get(actor) {
                             write!(writer, 
-                                "| <ul><li>{}</li></ul> ", 
+                                "| <table>{}</table> ", 
                                 codes.iter().map(|(code, documentation)| { 
                                     if documentation.is_empty() {
-                                        code.clone()
+                                        format!("<tr><td>{}</td><td></td></tr>", code)
                                     } else {
-                                        format!("{} - {}", code, documentation)
+                                        format!("<tr><td>{}</td><td>{}</td></tr>", code, documentation)
                                     }
-                                }).collect::<Vec<_>>().join("</li><li>")
+                                }).collect::<Vec<_>>().join("")
                             )?;
                         } else {
                             write!(writer, "| ")?;
