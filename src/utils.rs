@@ -1,20 +1,26 @@
 use serde_json::Value;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::PathBuf;
 
-pub fn load_json_from_file(path: &String) -> Result<Value, Box<dyn std::error::Error>> {
+pub fn load_json_from_file(path: &PathBuf) -> Result<Value, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let value = serde_json::from_reader(reader)?;
     Ok(value)
 }
 
-pub fn get_slice_after_last_occurrence(s: &String, c: char) -> Option<String> {
+pub fn get_slice_after_last_occurrence(s: &str, c: char) -> Option<String> {
     s.rfind(c)
         .map(|last_index| s[last_index + c.len_utf8()..].to_string())
 }
 
-pub fn count_char_occurrences(s: &String, c: char) -> usize {
+pub fn get_slice_after_first_occurrence(s: &str, c: char) -> Option<String> {
+    s.find(c)
+        .map(|first_index| s[first_index..].to_string())
+}
+
+pub fn count_char_occurrences(s: &str, c: char) -> usize {
     s.chars().filter(|&ch| ch == c).count()
 }
 
