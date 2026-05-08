@@ -4,5 +4,6 @@
 *.docx
 *.png
 *.svg
+*.html
 !README.md
 test_data

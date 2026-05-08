@@ -1,7 +1,8 @@
 mod utils;
 
 use crate::utils::{
-    count_char_occurrences, generate_code, get_slice_after_first_occurrence, get_slice_after_last_occurrence, load_json_from_file
+    count_char_occurrences, generate_code, get_slice_after_first_occurrence,
+    get_slice_after_last_occurrence, load_json_from_file,
 };
 use clap::{Args, Parser, Subcommand};
 use easy_tree::Tree;
@@ -68,6 +69,9 @@ struct MindmapArgs {
     /// At which hierarchical level to stop using boxes in mind map
     #[arg(short, long, default_value_t = 255)]
     box_level: usize,
+    /// Whether to add a link to the structure definition in the mind map
+    #[arg(short, long)]
+    link: bool,
 }
 
 #[derive(Args, Debug)]
@@ -95,7 +99,11 @@ struct ObligationsArgs {
 
     /// Folder with actor definitions
     #[arg(short, long)]
-    actors_folder: Option<PathBuf>,    
+    actors_folder: Option<PathBuf>,
+
+    /// If only obligations should be included in table
+    #[arg(short, long)]
+    only_obligations: bool,
 }
 
 #[derive(Debug, Clone, Display, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -158,15 +166,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut writer = BufWriter::new(output); // Create a buffered writer
 
                 writeln!(writer, "# {}", doc.id)?;
-
                 writeln!(
                     writer,
-                    "| Code | Path | Element | Description | Datatype | Cardinality | Global Cardinality | Preferred Code System | Requirements |"
+                    "| Level | Element Name | Element Description | Data type | Cardinality | Binding requirements |\n|-------|---------------|---------------------|------------|--------------|----------------------|" //"| Code | Path | Element | Description | Datatype | Cardinality | Global Cardinality | Preferred Code System | Requirements |"
                 )?;
-                writeln!(
-                    writer,
-                    "| --- | --- | --- | --- | --- | --- | --- | --- | --- "
-                )?;
+                // writeln!(
+                //     writer,
+                //     "| --- | --- | --- | --- | --- | --- | --- | --- | --- "
+                // )?;
 
                 let mut levels = Vec::<usize>::new();
                 levels.push(0);
@@ -184,7 +191,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             element.id.clone()
                         };
                         let element_path: String = if hier_level > 0 {
-                            get_slice_after_first_occurrence(&element.id, '.').unwrap_or(element.id.clone())
+                            get_slice_after_first_occurrence(&element.id, '.')
+                                .unwrap_or(element.id.clone())
                         } else {
                             element.id.clone()
                         };
@@ -205,6 +213,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 levels[current_level] += 1;
                             }
                         }
+                        
+                        let level = "+".repeat(hier_level);
+
                         let mut code = prefix.clone();
                         for level in &levels[1..=current_level] {
                             code.push('.');
@@ -214,21 +225,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let description = if element.short == element.definition {
                             element.short.clone()
                         } else {
-                            format!("{}<br/>{}", element.short, element.definition.replace("\n", "<br/>"))
+                            format!(
+                                "{}<br/>{}",
+                                element.short,
+                                element.definition.replace("\n", "<br/>")
+                            )
                         };
                         let element_part_no_x = element_part.replace("[x]", "");
                         write!(
                             writer,
-                            "| {} | {} | {} | {} | {} | {}..{} | {}..{} |",
-                            code,
-                            element_path,
-                            camel_to_spaced_pascal(&element_part_no_x),
+                            "| {} | {} | {} | {} | {}..{} |",
+                            level,
+                            element_part_no_x,
+                            // camel_to_spaced_pascal(&element_part_no_x),
                             description,
                             reduce_datatypes(&element.datatype),
                             element.min,
-                            element.max,
-                            element.global_min,
-                            element.global_max
+                            element.max
+                            //element.global_min,
+                            // element.global_max
                         )
                         .unwrap();
                         if let Some(binding) = &element.binding {
@@ -360,14 +375,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let docs = load_structure_definition_files(&mindmap_args.common.files)?;
             for doc in docs.iter() {
                 println!("processing: {}", doc.id);
-                let output = File::create(format!("{}_mindmap.plantuml", doc.id))?;
+
+                let model = if let Some(title) = doc.id.strip_suffix("Obligations") {
+                    title
+                } else {
+                    &doc.id
+                };
+
+                let output = File::create(format!("{}_mindmap.plantuml", model))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
 
-                writeln!(
-                    writer,
-                    "@startmindmap\nskinparam topurl StructureDefinition-\n\n* **[[{}.html {}]]**",
-                    doc.id, doc.id
-                )?;
+                if mindmap_args.link {
+                    writeln!(
+                        writer,
+                        "@startmindmap\nskinparam dpi 200\nskinparam topurl StructureDefinition-\n\n* **[[{}.html {}]]**",
+                        model, model
+                    )?;
+                } else {
+                    writeln!(
+                        writer,
+                        "@startmindmap\nskinparam dpi 200\nskinparam topurl StructureDefinition-\n\n* **{}**",
+                        model
+                    )?;
+                }
 
                 doc.element_tree.traverse(
                     |_idx, element, _| {
@@ -406,47 +436,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let docs = load_structure_definition_files(&args.common.files)?;
-            for doc  in docs.iter() {
+            for doc in docs.iter() {
                 println!("processing: {}", doc.id);
-                let output = File::create(format!("{}.md", doc.id))?;
+                let output = File::create(format!("{}.html", doc.id))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
 
-                writeln!(writer, "# {}", doc.id)?;
+                writeln!(
+                    writer,
+                    "<h1>{}</h1>",
+                    if !args.only_obligations
+                        && let Some(title) = doc.id.strip_suffix("Obligations")
+                    {
+                        title
+                    } else {
+                        &doc.id
+                    }
+                )?;
 
-                // table: path, element, actor1: [code, documentation], actor2: [code, documentation], ...
-                let mut table = Vec::<(String, String, HashMap<String, Vec<(String, String)>>)>::new();
                 let mut unique_actors = HashSet::<String>::new();
 
+                // identify unique actors
                 doc.element_tree.traverse(
                     |_idx, element, _| {
-                        let hier_level: usize = count_char_occurrences(&element.id, '.');
-                        let element_part: String = if hier_level > 0 {
-                            get_slice_after_last_occurrence(&element.id, '.').unwrap()
-                        } else {
-                            element.id.clone()
-                        };
-                        let element_path: String = if hier_level > 0 {
-                            get_slice_after_first_occurrence(&element.id, '.').unwrap_or(element.id.clone())
-                        } else {
-                            element.id.clone()
-                        };
-
                         if !element.obligation.is_empty() {
-                            table.push((
-                                element_path.clone(),
-                                element_part.clone(),
-                                HashMap::<String, Vec<(String, String)>>::new(),
-                            ));
-
                             for obligation in &element.obligation {
-                                let hash =
-                                    &mut table.last_mut().unwrap().2;
-                                let actor = obligation.0.clone();
-                                unique_actors.insert(actor.clone());
-                                let code = obligation.1.clone();
-                                let documentation = obligation.2.clone();
-                                let codes = hash.entry(actor).or_default();
-                                codes.push((code, documentation));
+                                unique_actors.insert(obligation.0.clone());
                             }
                         }
                     },
@@ -454,46 +468,118 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut (),
                 );
 
-                let no_of_actors = unique_actors.len();
-
-                write!(writer, "| Path | Element ")?;
+                write!(
+                    writer,
+                    "<table>\n<tr><th>Element</th><th>Description</th><th>Datatype</th><th>Cardinality</th><th>Preferred Code System</th>"
+                )?;
                 for actor in unique_actors.iter() {
                     let actor_name = if let Some(name) = actors.get(actor) {
                         name.clone()
                     } else {
                         get_slice_after_last_occurrence(actor, '/').ok_or("Wrong actor URL")?
                     };
-                    write!(writer, "| {} ", actor_name)?;
+                    write!(writer, "<th>{}</th>", actor_name)?;
                 }
-                writeln!(writer, "|")?;
-                write!(writer, "| --- | --- ")?;
-                for _ in 0..no_of_actors {
-                    write!(writer, "| --- ")?;
-                }
-                writeln!(writer, "|")?;
+                writeln!(writer, "</tr>")?;
 
-                for (element_path, element_part, hash) in table.iter() {
-                    write!(writer, "| {} ", element_path)?;
-                    let element_part_no_x = element_part.replace("[x]", "");
-                    write!(writer, "| {} ", camel_to_spaced_pascal(&element_part_no_x))?;
-                    for actor in unique_actors.iter() {
-                        if let Some(codes) = hash.get(actor) {
-                            write!(writer, 
-                                "| <table>{}</table> ", 
-                                codes.iter().map(|(code, documentation)| { 
-                                    if documentation.is_empty() {
-                                        format!("<tr><td>{}</td><td></td></tr>", code)
-                                    } else {
-                                        format!("<tr><td>{}</td><td>{}</td></tr>", code, documentation)
-                                    }
-                                }).collect::<Vec<_>>().join("")
-                            )?;
-                        } else {
-                            write!(writer, "| ")?;
+                doc.element_tree.traverse(
+                    |_idx, element, _| {
+                        if !args.only_obligations || !element.obligation.is_empty() {
+                            let hier_level: usize = count_char_occurrences(&element.id, '.');
+                            let element_part: String = if hier_level > 0 {
+                                get_slice_after_last_occurrence(&element.id, '.').unwrap()
+                            } else {
+                                element.id.clone()
+                            };
+                            let element_path: String = if hier_level > 0 {
+                                get_slice_after_first_occurrence(&element.id, '.')
+                                    .unwrap_or(element.id.clone())
+                            } else {
+                                element.id.clone()
+                            };
+                            // let element_path_no_x =
+                            //     element_path.strip_suffix("[x]").unwrap_or(&element_path);
+
+                            // write!(writer, "<tr><td>{}</td>", element_path_no_x).unwrap();
+                            let element_part_no_x = element_part.replace("[x]", "");
+                            write!(
+                                writer,
+                                "<td>{}{}</td>",
+                                "&nbsp;&nbsp;".repeat(hier_level),
+                                camel_to_spaced_pascal(&element_part_no_x)
+                            )
+                            .unwrap();
+
+                            let description = if element.short == element.definition {
+                                element.short.clone()
+                            } else {
+                                format!(
+                                    "{}<br/>{}",
+                                    element.short,
+                                    element.definition.replace("\n", "<br/>")
+                                )
+                            };
+                            write!(writer, "<td>{}</td>", description).unwrap();
+
+                            write!(writer, "<td>{}</td>", reduce_datatypes(&element.datatype))
+                                .unwrap();
+
+                            write!(writer, "<td>{}..{}</td>", element.min, element.max).unwrap();
+
+                            if let Some(binding) = &element.binding {
+                                write!(writer, "<td>{}</td>", binding).unwrap();
+                            } else {
+                                write!(writer, "<td></td>").unwrap();
+                            }
+
+                            let mut obligation_map =
+                                HashMap::<String, Vec<(String, String)>>::new();
+                            if !element.obligation.is_empty() {
+                                for obligation in &element.obligation {
+                                    let actor = obligation.0.clone();
+                                    let code = obligation.1.clone();
+                                    let documentation = obligation.2.clone();
+                                    let codes = obligation_map.entry(actor).or_default();
+                                    codes.push((code, documentation));
+                                }
+                            }
+
+                            for actor in unique_actors.iter() {
+                                if let Some(codes) = obligation_map.get(actor) {
+                                    write!(
+                                        writer,
+                                        "<td><table>{}</table></td>",
+                                        codes
+                                            .iter()
+                                            .map(|(code, documentation)| {
+                                                if documentation.is_empty() {
+                                                    format!("<tr><td>{}</td><td></td></tr>", code)
+                                                } else {
+                                                    format!(
+                                                        "<tr><td>{}</td><td>{}</td></tr>",
+                                                        code, documentation
+                                                    )
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("")
+                                    )
+                                    .unwrap();
+                                } else {
+                                    write!(writer, "<td></td>").unwrap();
+                                }
+                            }
+
+                            writeln!(writer, "</tr>").unwrap();
                         }
-                    }
-                    writeln!(writer, "|")?;
-                }
+                    },
+                    |_, _, _| (),
+                    &mut (),
+                );
+
+                // let no_of_actors = unique_actors.len();
+
+                writeln!(writer, "</table>")?;
             }
         }
     }
@@ -505,7 +591,12 @@ fn load_actor_files(path: &PathBuf) -> Result<HashMap<String, String>, Box<dyn s
     let mut actors = HashMap::<String, String>::new();
     let paths = std::fs::read_dir(path)?
         .filter_map(|res| res.ok())
-        .filter(|e| e.path().file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("ActorDefinition-") && n.ends_with(".json")));
+        .filter(|e| {
+            e.path()
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("ActorDefinition-") && n.ends_with(".json"))
+        });
     for entry in paths {
         let path = entry.path();
         if path.is_file() {
@@ -517,7 +608,7 @@ fn load_actor_files(path: &PathBuf) -> Result<HashMap<String, String>, Box<dyn s
     }
     Ok(actors)
 }
- 
+
 fn load_structure_definition_files(
     files: &[PathBuf],
 ) -> Result<Vec<StructureDefTreeInfo>, Box<dyn std::error::Error>> {
@@ -614,9 +705,10 @@ fn load_single_structure_definition_file_into_tree(
                                     actor = value.to_string();
                                 }
                             } else if ext2["url"].as_str() == Some("documentation")
-                                && let Some(value) = ext2["valueMarkdown"].as_str() {
-                                    documentation = value.to_string();
-                                }
+                                && let Some(value) = ext2["valueMarkdown"].as_str()
+                            {
+                                documentation = value.to_string();
+                            }
                         }
                     }
                     if !code.is_empty() && !actor.is_empty() {
