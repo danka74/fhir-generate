@@ -1,7 +1,7 @@
 mod utils;
 
 use crate::utils::{
-    count_char_occurrences, generate_code, get_slice_after_first_occurrence,
+    count_char_occurrences, generate_code,
     get_slice_after_last_occurrence, load_json_from_file,
 };
 use clap::{Args, Parser, Subcommand};
@@ -124,6 +124,7 @@ struct ElementInfo {
 
 struct StructureDefTreeInfo {
     id: String,
+    base: String,
     element_tree: Tree<ElementInfo>,
 }
 
@@ -161,6 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     args.prefix_code.clone()
                 };
+
+                let _base = ();
+
                 println!("processing: {}", doc.id);
                 let output = File::create(format!("{}.md", doc.id))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
@@ -190,12 +194,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             element.id.clone()
                         };
-                        let element_path: String = if hier_level > 0 {
-                            get_slice_after_first_occurrence(&element.id, '.')
-                                .unwrap_or(element.id.clone())
-                        } else {
-                            element.id.clone()
-                        };
+                        // let element_path: String = if hier_level > 0 {
+                        //     get_slice_after_first_occurrence(&element.id, '.')
+                        //         .unwrap_or(element.id.clone())
+                        // } else {
+                        //     element.id.clone()
+                        // };
                         // if (hier_level as isize - current_level as isize).abs() > 1 {
                         //     return Err(format!("Hierarchical level difference is too large: {}", element.id).into());
                         // }
@@ -232,27 +236,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )
                         };
 
-                        let cardinality = if hier_level > 0 {
-                            format!("{}..{}", element.min, element.max)
-                        } else {
-                            String::new()
-                        };
-
                         let element_part_no_x = element_part.replace("[x]", "");
                         write!(
                             writer,
-                            "| {} | {} | {} | {} |",
+                            "| {} | {} | {} |",
                             level,
                             element_part_no_x,
                             // camel_to_spaced_pascal(&element_part_no_x),
-                            description,
-                            reduce_datatypes(&element.datatype)
+                            description
                         ).unwrap();
 
                         if hier_level == 0 {
-                            write!(writer, " |").unwrap();
+                            write!(writer, " Derived from parent data type: {} | |", doc.base).unwrap();
                         } else {
-                            write!(writer, " {}..{} |", element.min, element.max).unwrap();
+                            write!(writer, " {} | {}..{} |", reduce_datatypes(&element.datatype), element.min, element.max).unwrap();
                         }
 
                         if let Some(binding) = &element.binding {
@@ -260,16 +257,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             write!(writer, " |").unwrap();
                         }
+
                         // if let Some(binding_strength) = &element.binding_strength {
                         //     write!(writer, " {} |", binding_strength).unwrap();
                         // } else {
                         //     write!(writer, " |").unwrap();
                         // }
-                        if let Some(requirements) = &element.requirements {
-                            write!(writer, " {} |", requirements.replace("\n", "<br/>")).unwrap();
-                        } else {
-                            write!(writer, " |").unwrap();
-                        }
+                        // if let Some(requirements) = &element.requirements {
+                        //     write!(writer, " {} |", requirements.replace("\n", "<br/>")).unwrap();
+                        // } else {
+                        //     write!(writer, " |").unwrap();
+                        // }
                         // if let Some((actor, code, documentation)) = element.obligation.first() {
                         //     write!(writer, " {} ({}) | {} |", actor, code, documentation.replace("\n", "<br/>")).unwrap();
                         // } else {
@@ -500,12 +498,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 element.id.clone()
                             };
-                            let element_path: String = if hier_level > 0 {
-                                get_slice_after_first_occurrence(&element.id, '.')
-                                    .unwrap_or(element.id.clone())
-                            } else {
-                                element.id.clone()
-                            };
+                            // let element_path: String = if hier_level > 0 {
+                            //     get_slice_after_first_occurrence(&element.id, '.')
+                            //         .unwrap_or(element.id.clone())
+                            // } else {
+                            //     element.id.clone()
+                            // };
                             // let element_path_no_x =
                             //     element_path.strip_suffix("[x]").unwrap_or(&element_path);
 
@@ -816,8 +814,12 @@ fn load_single_structure_definition_file_into_tree(
             });
         }
     }
+
+    let base = get_slice_after_last_occurrence(doc["baseDefinition"].as_str().ok_or("Missing base")?, '/').unwrap();
+
     Ok(StructureDefTreeInfo {
         id: id.to_string(),
+        base,
         element_tree,
     })
 }
