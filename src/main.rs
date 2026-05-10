@@ -231,21 +231,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 element.definition.replace("\n", "<br/>")
                             )
                         };
+
+                        let cardinality = if hier_level > 0 {
+                            format!("{}..{}", element.min, element.max)
+                        } else {
+                            String::new()
+                        };
+
                         let element_part_no_x = element_part.replace("[x]", "");
                         write!(
                             writer,
-                            "| {} | {} | {} | {} | {}..{} |",
+                            "| {} | {} | {} | {} |",
                             level,
                             element_part_no_x,
                             // camel_to_spaced_pascal(&element_part_no_x),
                             description,
-                            reduce_datatypes(&element.datatype),
-                            element.min,
-                            element.max
-                            //element.global_min,
-                            // element.global_max
-                        )
-                        .unwrap();
+                            reduce_datatypes(&element.datatype)
+                        ).unwrap();
+
+                        if hier_level == 0 {
+                            write!(writer, " |").unwrap();
+                        } else {
+                            write!(writer, " {}..{} |", element.min, element.max).unwrap();
+                        }
+
                         if let Some(binding) = &element.binding {
                             write!(writer, " {} |", binding).unwrap();
                         } else {
