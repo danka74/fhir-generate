@@ -236,12 +236,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             )
                         };
 
-                        let element_part_no_x = element_part.replace("[x]", "");
+                        // let element_part_no_x = element_part.replace("[x]", "");
                         write!(
                             writer,
                             "| {} | {} | {} |",
                             level,
-                            element_part_no_x,
+                            element_part,
                             // camel_to_spaced_pascal(&element_part_no_x),
                             description
                         ).unwrap();
