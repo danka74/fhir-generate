@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let output = File::create(format!("{}.md", doc.id))?;
                 let mut writer = BufWriter::new(output); // Create a buffered writer
 
-                writeln!(writer, "# {}", doc.id)?;
+                writeln!(writer, "## {}", doc.id)?;
                 writeln!(
                     writer,
                     "| Level | Element Name | Element Description | Data type | Cardinality | Binding requirements |\n|-------|---------------|---------------------|------------|--------------|----------------------|" //"| Code | Path | Element | Description | Datatype | Cardinality | Global Cardinality | Preferred Code System | Requirements |"
