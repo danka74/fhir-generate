@@ -1,8 +1,7 @@
 mod utils;
 
 use crate::utils::{
-    count_char_occurrences, generate_code,
-    get_slice_after_last_occurrence, load_json_from_file,
+    count_char_occurrences, generate_code, get_slice_after_last_occurrence, get_slice_before_first_occurrence, load_json_from_file,
 };
 use clap::{Args, Parser, Subcommand};
 use easy_tree::Tree;
@@ -172,7 +171,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(writer, "## {}", doc.id)?;
                 writeln!(
                     writer,
-                    "| Level | Element Name | Element Description | Data type | Cardinality | Binding requirements |\n|-------|---------------|---------------------|------------|--------------|----------------------|" //"| Code | Path | Element | Description | Datatype | Cardinality | Global Cardinality | Preferred Code System | Requirements |"
+                    "| Level | Element Name | Element Description | Data type | Cardinality | Binding requirements | Relevance for support level \"full\" | Relevance for support level \"basic\" |\n|-------|---------------|---------------------|------------|--------------|----------------------|---|---|" 
+                    //"| Code | Path | Element | Description | Datatype | Cardinality | Global Cardinality | Preferred Code System | Requirements |"
                 )?;
                 // writeln!(
                 //     writer,
@@ -190,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     |_idx, element, _| {
                         let hier_level: usize = count_char_occurrences(&element.id, '.');
                         let element_part: String = if hier_level > 0 {
-                            get_slice_after_last_occurrence(&element.id, '.').unwrap()
+                            get_slice_after_last_occurrence(&element.id, '.').unwrap_or(element.id.clone())
                         } else {
                             element.id.clone()
                         };
@@ -244,21 +244,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             element_part,
                             // camel_to_spaced_pascal(&element_part_no_x),
                             description
-                        ).unwrap();
+                        ).unwrap_or(());
 
                         if hier_level == 0 {
-                            write!(writer, " Derived from parent data type: {} | |", doc.base).unwrap();
+                            write!(writer, " Derived from parent data type: {} | |", doc.base).unwrap_or(());
                         } else {
-                            write!(writer, " {} | {}..{} |", reduce_datatypes(&element.datatype), element.min, element.max).unwrap();
+                            write!(writer, " {} | {}..{} |", reduce_datatypes(&element.datatype), element.min, element.max).unwrap_or(());
                         }
 
                         if let Some(binding) = &element.binding {
-                            write!(writer, " {} |", binding).unwrap();
+                            write!(writer, " {} |", binding).unwrap_or(());
                         } else {
-                            write!(writer, " |").unwrap();
+                            write!(writer, " |").unwrap_or(());
                         }
 
-                        // if let Some(binding_strength) = &element.binding_strength {
+                        if let Some((_, code, _)) = element.obligation.iter().find(|o| o.0 == "https://ehds.eu/specifications/fhir/actor-full") {
+                            write!(writer, " {} |", match get_slice_before_first_occurrence(code, ':') {
+                                Some(s) => s,
+                                None => code.to_string(),
+                            }).unwrap_or(());
+                        } else {
+                            write!(writer, " | |").unwrap_or(());
+                        }
+                        if let Some((_, code, _)) = element.obligation.iter().find(|o| o.0 == "https://ehds.eu/specifications/fhir/actor-basic") {
+                            write!(writer, " {} |", match get_slice_before_first_occurrence(code, ':') {
+                                Some(s) => s,
+                                None => code.to_string(),
+                            }).unwrap_or(());
+                        } else {
+                            write!(writer, " | |").unwrap_or(());
+                        }
+                                                // if let Some(binding_strength) = &element.binding_strength {
                         //     write!(writer, " {} |", binding_strength).unwrap();
                         // } else {
                         //     write!(writer, " |").unwrap();
@@ -273,7 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // } else {
                         //     write!(writer, " | |").unwrap();
                         // }
-                        writeln!(writer).unwrap();
+                        writeln!(writer).unwrap_or(());
                     },
                     |_, _, _| (),
                     &mut (),

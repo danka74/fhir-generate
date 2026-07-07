@@ -15,6 +15,11 @@ pub fn get_slice_after_last_occurrence(s: &str, c: char) -> Option<String> {
         .map(|last_index| s[last_index + c.len_utf8()..].to_string())
 }
 
+pub fn get_slice_before_first_occurrence(s: &str, c: char) -> Option<String> {
+    s.find(c)
+        .map(|first_index| s[..first_index ].to_string())
+}
+
 // pub fn get_slice_after_first_occurrence(s: &str, c: char) -> Option<String> {
 //     s.find(c)
 //         .map(|first_index| s[first_index..].to_string())
